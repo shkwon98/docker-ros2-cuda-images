@@ -14,7 +14,6 @@ EXPECTED_LABELS = {
     "org.opencontainers.image.base.name": (
         "nvcr.io/nvidia/cuda:13.2.1-runtime-ubuntu24.04"
     ),
-    "io.github.shkwon98.cuda.type": "runtime",
     "io.github.shkwon98.cuda.version": "13.2.1",
     "io.github.shkwon98.ubuntu.version": "24.04",
     "io.github.shkwon98.ubuntu.codename": "noble",

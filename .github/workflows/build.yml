@@ -89,7 +89,6 @@ jobs:
           build-args: |
             BASE_IMAGE=${{ matrix.base_image }}
             BUILD_DATE=${{ steps.metadata.outputs.created }}
-            CUDA_TYPE=${{ matrix.cuda_type }}
             EXPECTED_CUDA_VERSION=${{ matrix.cuda_version }}
             EXPECTED_UBUNTU_VERSION=${{ matrix.ubuntu_version }}
             ROS_APT_SOURCE_PACKAGE=${{ matrix.ros_apt_source_package }}
@@ -154,7 +153,6 @@ jobs:
           merge-multiple: true
       - name: Verify platform digests
         env:
-          CUDA_TYPE: ${{ matrix.cuda_type }}
           IMAGE: ${{ steps.metadata.outputs.image }}
           PLATFORMS: ${{ toJSON(matrix.platforms) }}
           ROS_DISTRO: ${{ matrix.ros_distro }}
@@ -175,7 +173,6 @@ jobs:
             python3 scripts/verify_image.py platform "$inspection" \
               --platform "$platform" \
               --base-image "$(jq -r .base_image <<<"$platform_config")" \
-              --cuda-type "$CUDA_TYPE" \
               --cuda-version "$(jq -r .cuda_version <<<"$platform_config")" \
               --ubuntu-version "$UBUNTU_VERSION" \
               --ubuntu-codename "$UBUNTU_CODENAME" \

@@ -13,11 +13,9 @@ def valid_document():
     return {
         "images": [
             {
-                "cuda_type": "runtime",
                 "ubuntu_version": "24.04",
                 "ubuntu_codename": "noble",
                 "ros_distro": "jazzy",
-                "ros_variants": ["ros-core", "ros-base"],
                 "ros_apt_source_version": "1.2.0",
                 "ros_apt_source_package": "ros2-apt-source",
                 "ros_apt_source_sha256": (
@@ -164,7 +162,6 @@ class MatrixTests(unittest.TestCase):
             ],
         )
         self.assertEqual(builds[0]["ros_variant"], "ros-core")
-        self.assertNotIn("ros_variants", builds[0])
         self.assertNotIn("platforms", builds[0])
 
     def test_requires_both_platforms(self):
@@ -188,13 +185,6 @@ class MatrixTests(unittest.TestCase):
         document["images"][0]["platforms"]["linux/arm64"]["target"] = "jetson"
 
         with self.assertRaisesRegex(ValueError, "target"):
-            expand(document)
-
-    def test_rejects_unknown_ros_variant(self):
-        document = valid_document()
-        document["images"][0]["ros_variants"] = ["desktop"]
-
-        with self.assertRaisesRegex(ValueError, "desktop"):
             expand(document)
 
     def test_rejects_duplicate_derived_tags(self):

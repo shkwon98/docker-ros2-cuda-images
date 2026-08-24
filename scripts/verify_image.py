@@ -88,7 +88,6 @@ def verify_manifest_platforms(image: object) -> None:
 def expected_labels(arguments: argparse.Namespace) -> dict[str, str]:
     return {
         "org.opencontainers.image.base.name": arguments.base_image,
-        "io.github.shkwon98.cuda.type": arguments.cuda_type,
         "io.github.shkwon98.cuda.version": arguments.cuda_version,
         "io.github.shkwon98.ubuntu.version": arguments.ubuntu_version,
         "io.github.shkwon98.ubuntu.codename": arguments.ubuntu_codename,
@@ -109,7 +108,6 @@ def main() -> int:
     for name in (
         "platform",
         "base-image",
-        "cuda-type",
         "cuda-version",
         "ubuntu-version",
         "ubuntu-codename",

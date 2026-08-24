@@ -4,19 +4,17 @@ from pathlib import Path
 
 
 REQUIRED_FIELDS = {
-    "cuda_type",
     "platforms",
     "ros_apt_source_package",
     "ros_apt_source_sha256",
     "ros_apt_source_version",
     "ros_distro",
-    "ros_variants",
     "ubuntu_codename",
     "ubuntu_version",
 }
 REQUIRED_PLATFORMS = ("linux/amd64", "linux/arm64")
 REQUIRED_PLATFORM_FIELDS = {"base_image", "cuda_version"}
-SUPPORTED_ROS_VARIANTS = {"ros-core", "ros-base"}
+ROS_VARIANTS = ("ros-core", "ros-base")
 SUPPORTED_ROS_APT_SOURCE_PACKAGES = {
     "ros2-apt-source",
     "ros2-testing-apt-source",
@@ -83,26 +81,17 @@ def expand(document: object) -> dict[str, list[dict[str, object]]]:
             if not isinstance(cuda_version, str) or not cuda_version:
                 raise ValueError(f"invalid cuda_version for {platform}")
 
-        variants = image["ros_variants"]
-        if not isinstance(variants, list) or not variants:
-            raise ValueError("ros_variants must be a non-empty list")
-
         apt_source_package = image["ros_apt_source_package"]
         if apt_source_package not in SUPPORTED_ROS_APT_SOURCE_PACKAGES:
             raise ValueError(f"unsupported ROS apt source package: {apt_source_package}")
 
-        for variant in variants:
-            if variant not in SUPPORTED_ROS_VARIANTS:
-                raise ValueError(f"unsupported ROS variant: {variant}")
-
+        for variant in ROS_VARIANTS:
             tag = f'{image["ros_distro"]}-{variant}'
             if tag in tags:
                 raise ValueError(f"duplicate tag: {tag}")
             tags.add(tag)
 
-            manifest = {
-                key: value for key, value in image.items() if key != "ros_variants"
-            }
+            manifest = dict(image)
             manifest.update(
                 {
                     "ros_variant": variant,
@@ -115,7 +104,7 @@ def expand(document: object) -> dict[str, list[dict[str, object]]]:
             shared = {
                 key: value
                 for key, value in image.items()
-                if key not in {"platforms", "ros_variants"}
+                if key != "platforms"
             }
             for platform in REQUIRED_PLATFORMS:
                 build = dict(shared)

@@ -6,7 +6,6 @@ FROM ${BASE_IMAGE}
 
 ARG BASE_IMAGE
 ARG BUILD_DATE=1970-01-01T00:00:00Z
-ARG CUDA_TYPE
 ARG EXPECTED_CUDA_VERSION
 ARG EXPECTED_UBUNTU_VERSION
 ARG ROS_APT_SOURCE_PACKAGE
@@ -24,7 +23,6 @@ LABEL org.opencontainers.image.base.name="${BASE_IMAGE}" \
       org.opencontainers.image.revision="${VCS_REF}" \
       org.opencontainers.image.source="https://github.com/shkwon98/docker-ros2-cuda-images" \
       org.opencontainers.image.title="ROS 2 CUDA" \
-      io.github.shkwon98.cuda.type="${CUDA_TYPE}" \
       io.github.shkwon98.cuda.version="${EXPECTED_CUDA_VERSION}" \
       io.github.shkwon98.ros.distro="${ROS_DISTRO}" \
       io.github.shkwon98.ros.variant="${ROS_VARIANT}" \
