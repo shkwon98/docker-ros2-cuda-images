@@ -2,8 +2,24 @@ name: Build images
 
 on:
   pull_request:
+    paths:
+      - .dockerignore
+      - .github/workflows/build.yml
+      - Dockerfile
+      - images.json
+      - ros_entrypoint.sh
+      - scripts/**
+      - tests/**
   push:
     branches: [main]
+    paths:
+      - .dockerignore
+      - .github/workflows/build.yml
+      - Dockerfile
+      - images.json
+      - ros_entrypoint.sh
+      - scripts/**
+      - tests/**
   schedule:
     - cron: "17 3 1 * *"
   workflow_dispatch:

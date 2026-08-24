@@ -6,6 +6,7 @@
 
 <p>
   <a href="https://github.com/shkwon98/docker-ros2-cuda-images/actions/workflows/build.yml"><img alt="Build status" src="https://github.com/shkwon98/docker-ros2-cuda-images/actions/workflows/build.yml/badge.svg"></a>
+  <a href="https://hub.docker.com/r/shkwon98/ros2-cuda"><img alt="Docker Hub" src="https://img.shields.io/badge/Docker%20Hub-shkwon98%2Fros2--cuda-2496ED?logo=docker&logoColor=white"></a>
   <a href="#supported-configurations"><img alt="ROS 2" src="https://img.shields.io/badge/ROS%202-supported-22314E?logo=ros&logoColor=white"></a>
   <a href="#supported-configurations"><img alt="CUDA" src="https://img.shields.io/badge/CUDA-enabled-76B900?logo=nvidia&logoColor=white"></a>
   <a href="#platform-support"><img alt="Platforms" src="https://img.shields.io/badge/platform-linux%2Famd64%20%7C%20linux%2Farm64-0078D4?logo=linux&logoColor=white"></a>
