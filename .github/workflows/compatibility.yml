@@ -1,0 +1,105 @@
+name: Weekly compatibility check
+
+on:
+  schedule:
+    - cron: "29 4 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: images-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Generate matrix
+        run: python3 scripts/matrix.py images.json > matrix.json
+      - name: Verify NVIDIA base images
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS=$'\t' read -r base platform cuda_version; do
+            image=$(docker buildx imagetools inspect --format '{{json .Image}}' "$base")
+            python3 -c '
+          import json
+          import sys
+
+          image = json.load(sys.stdin)
+          platform = sys.argv[1]
+          cuda_version = sys.argv[2]
+          if "architecture" in image:
+              actual_platform = "{}/{}".format(image["os"], image["architecture"])
+              assert actual_platform == platform, (actual_platform, platform)
+              config = image["config"]
+          else:
+              assert platform in image, (platform, sorted(image))
+              config = image[platform]["config"]
+          assert f"CUDA_VERSION={cuda_version}" in config["Env"]
+          ' "$platform" "$cuda_version" <<<"$image"
+          done < <(
+            jq -r '
+              .builds.include |
+              unique_by([.base_image, .platform])[] |
+              [.base_image, .platform, .cuda_version] |
+              @tsv
+            ' matrix.json
+          )
+      - name: Verify ROS apt source packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          temporary_directory=$(mktemp -d)
+          trap 'rm -r "$temporary_directory"' EXIT
+
+          while IFS=$'\t' read -r package version codename sha256; do
+            deb="${temporary_directory}/${package}.${codename}.deb"
+            curl -fsSL \
+              -o "$deb" \
+              "https://github.com/ros-infrastructure/ros-apt-source/releases/download/${version}/${package}_${version}.${codename}_all.deb"
+            echo "${sha256}  ${deb}" | sha256sum --strict --check
+          done < <(
+            jq -r '
+              .builds.include |
+              unique_by([
+                .ros_apt_source_package,
+                .ros_apt_source_version,
+                .ubuntu_codename,
+                .ros_apt_source_sha256
+              ])[] |
+              [
+                .ros_apt_source_package,
+                .ros_apt_source_version,
+                .ubuntu_codename,
+                .ros_apt_source_sha256
+              ] |
+              @tsv
+            ' matrix.json
+          )
+      - name: Verify existing published manifests
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/ros2-cuda"
+          temporary_directory=$(mktemp -d)
+          trap 'rm -r "$temporary_directory"' EXIT
+
+          while IFS= read -r tag; do
+            inspection="${temporary_directory}/${tag}.json"
+            error="${temporary_directory}/${tag}.error"
+            if docker buildx imagetools inspect \
+              --format '{{json .Image}}' \
+              "${image}:${tag}" > "$inspection" 2> "$error"; then
+              python3 scripts/verify_image.py manifest "$inspection"
+            elif grep -Eqi 'manifest unknown|not found|404' "$error"; then
+              continue
+            else
+              sed "s/^/${tag}: /" "$error" >&2
+              exit 1
+            fi
+          done < <(jq -r '.manifests.include[].tag' matrix.json)
