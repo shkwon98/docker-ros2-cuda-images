@@ -78,8 +78,11 @@ jobs:
         id: metadata
         shell: bash
         run: |
-          echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/ros2-cuda" >> "$GITHUB_OUTPUT"
-          echo "created=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
+          {
+            echo "ghcr_image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/ros2-cuda"
+            echo "dockerhub_image=docker.io/${GITHUB_REPOSITORY_OWNER,,}/ros2-cuda"
+            echo "created=$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          } >> "$GITHUB_OUTPUT"
       - name: Log in to GHCR
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         uses: docker/login-action@v3
@@ -87,13 +90,19 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Log in to Docker Hub
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Build platform image
         id: build
         uses: docker/build-push-action@v6
         with:
           context: .
           platforms: ${{ matrix.platform }}
-          outputs: type=image,name=${{ steps.metadata.outputs.image }},push-by-digest=true,name-canonical=true,push=${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+          outputs: type=image,"name=${{ steps.metadata.outputs.ghcr_image }},${{ steps.metadata.outputs.dockerhub_image }}",push-by-digest=true,name-canonical=true,push=${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
           build-args: |
             BASE_IMAGE=${{ matrix.base_image }}
             BUILD_DATE=${{ steps.metadata.outputs.created }}
@@ -146,13 +155,20 @@ jobs:
       - name: Set image metadata
         id: metadata
         shell: bash
-        run: echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/ros2-cuda" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "ghcr_image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/ros2-cuda" >> "$GITHUB_OUTPUT"
+          echo "dockerhub_image=docker.io/${GITHUB_REPOSITORY_OWNER,,}/ros2-cuda" >> "$GITHUB_OUTPUT"
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Download digests
         uses: actions/download-artifact@v4
         with:
@@ -161,7 +177,8 @@ jobs:
           merge-multiple: true
       - name: Verify platform digests
         env:
-          IMAGE: ${{ steps.metadata.outputs.image }}
+          DOCKERHUB_IMAGE: ${{ steps.metadata.outputs.dockerhub_image }}
+          GHCR_IMAGE: ${{ steps.metadata.outputs.ghcr_image }}
           PLATFORMS: ${{ toJSON(matrix.platforms) }}
           ROS_DISTRO: ${{ matrix.ros_distro }}
           ROS_VARIANT: ${{ matrix.ros_variant }}
@@ -172,24 +189,27 @@ jobs:
           set -euo pipefail
           python3 scripts/verify_image.py digests /tmp/digests > /tmp/digests.json
 
-          while IFS=$'\t' read -r platform digest; do
-            platform_config=$(jq -c --arg platform "$platform" '.[$platform]' <<<"$PLATFORMS")
-            inspection="/tmp/${platform//\//-}.json"
-            docker buildx imagetools inspect \
-              --format '{{json .Image}}' \
-              "${IMAGE}@${digest}" > "$inspection"
-            python3 scripts/verify_image.py platform "$inspection" \
-              --platform "$platform" \
-              --base-image "$(jq -r .base_image <<<"$platform_config")" \
-              --cuda-version "$(jq -r .cuda_version <<<"$platform_config")" \
-              --ubuntu-version "$UBUNTU_VERSION" \
-              --ubuntu-codename "$UBUNTU_CODENAME" \
-              --ros-distro "$ROS_DISTRO" \
-              --ros-variant "$ROS_VARIANT"
-          done < <(jq -r 'to_entries[] | [.key, .value] | @tsv' /tmp/digests.json)
+          for image in "$GHCR_IMAGE" "$DOCKERHUB_IMAGE"; do
+            while IFS=$'\t' read -r platform digest; do
+              platform_config=$(jq -c --arg platform "$platform" '.[$platform]' <<<"$PLATFORMS")
+              inspection="/tmp/${platform//\//-}.json"
+              docker buildx imagetools inspect \
+                --format '{{json .Image}}' \
+                "${image}@${digest}" > "$inspection"
+              python3 scripts/verify_image.py platform "$inspection" \
+                --platform "$platform" \
+                --base-image "$(jq -r .base_image <<<"$platform_config")" \
+                --cuda-version "$(jq -r .cuda_version <<<"$platform_config")" \
+                --ubuntu-version "$UBUNTU_VERSION" \
+                --ubuntu-codename "$UBUNTU_CODENAME" \
+                --ros-distro "$ROS_DISTRO" \
+                --ros-variant "$ROS_VARIANT"
+            done < <(jq -r 'to_entries[] | [.key, .value] | @tsv' /tmp/digests.json)
+          done
       - name: Create manifest
         env:
-          IMAGE: ${{ steps.metadata.outputs.image }}
+          DOCKERHUB_IMAGE: ${{ steps.metadata.outputs.dockerhub_image }}
+          GHCR_IMAGE: ${{ steps.metadata.outputs.ghcr_image }}
           OS_TAG: ${{ matrix.os_tag }}
           TAG: ${{ matrix.tag }}
         shell: bash
@@ -197,17 +217,27 @@ jobs:
           set -euo pipefail
           mapfile -t digests < <(jq -r 'to_entries | sort_by(.key)[] | .value' /tmp/digests.json)
           test "${#digests[@]}" -eq 2
-          sources=()
-          for digest in "${digests[@]}"; do
-            sources+=("${IMAGE}@${digest}")
+          for image in "$GHCR_IMAGE" "$DOCKERHUB_IMAGE"; do
+            sources=()
+            for digest in "${digests[@]}"; do
+              sources+=("${image}@${digest}")
+            done
+            docker buildx imagetools create \
+              --tag "${image}:${TAG}" \
+              --tag "${image}:${OS_TAG}" \
+              "${sources[@]}"
           done
-          docker buildx imagetools create \
-            --tag "${IMAGE}:${TAG}" \
-            --tag "${IMAGE}:${OS_TAG}" \
-            "${sources[@]}"
       - name: Verify published manifest platforms
         env:
-          IMAGE: ${{ steps.metadata.outputs.image }}:${{ matrix.tag }}
+          DOCKERHUB_IMAGE: ${{ steps.metadata.outputs.dockerhub_image }}
+          GHCR_IMAGE: ${{ steps.metadata.outputs.ghcr_image }}
+          TAG: ${{ matrix.tag }}
+        shell: bash
         run: |
-          docker buildx imagetools inspect --format '{{json .Image}}' "$IMAGE" > image.json
-          python3 scripts/verify_image.py manifest image.json
+          set -euo pipefail
+          for image in "$GHCR_IMAGE" "$DOCKERHUB_IMAGE"; do
+            docker buildx imagetools inspect \
+              --format '{{json .Image}}' \
+              "${image}:${TAG}" > image.json
+            python3 scripts/verify_image.py manifest image.json
+          done

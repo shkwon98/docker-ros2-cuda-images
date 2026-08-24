@@ -29,6 +29,7 @@ Every multi-platform tag provides the same Ubuntu release and ROS 2 distribution
 | Registry | Architectures | Image variants |
 | :--- | :--- | :--- |
 | `ghcr.io/shkwon98/ros2-cuda` | `linux/amd64`, `linux/arm64` | `ros-core`, `ros-base` |
+| `docker.io/shkwon98/ros2-cuda` | `linux/amd64`, `linux/arm64` | `ros-core`, `ros-base` |
 
 > [!IMPORTANT]
 > This is a community project. It is not an official NVIDIA or ROS image.
@@ -45,6 +46,12 @@ Pull an image:
 
 ```bash
 docker pull ghcr.io/shkwon98/ros2-cuda:jazzy-ros-base
+```
+
+The same image is also available from Docker Hub:
+
+```bash
+docker pull shkwon98/ros2-cuda:jazzy-ros-base
 ```
 
 Run on a system with an NVIDIA discrete GPU:
