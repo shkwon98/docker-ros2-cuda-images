@@ -1,0 +1,119 @@
+{
+  "images": [
+    {
+      "cuda_type": "runtime",
+      "ubuntu_version": "22.04",
+      "ubuntu_codename": "jammy",
+      "ros_distro": "humble",
+      "ros_variants": [
+        "ros-core",
+        "ros-base"
+      ],
+      "ros_apt_source_package": "ros2-apt-source",
+      "ros_apt_source_version": "1.2.0",
+      "ros_apt_source_sha256": "767884cf4ed03116b9d64438930a832ed854147ae435279a7924dfdf60f94433",
+      "platforms": {
+        "linux/amd64": {
+          "base_image": "nvcr.io/nvidia/cuda:12.6.3-runtime-ubuntu22.04",
+          "cuda_version": "12.6.3"
+        },
+        "linux/arm64": {
+          "base_image": "nvcr.io/nvidia/l4t-cuda:12.6.11-runtime",
+          "cuda_version": "12.6.11"
+        }
+      }
+    },
+    {
+      "cuda_type": "runtime",
+      "ubuntu_version": "24.04",
+      "ubuntu_codename": "noble",
+      "ros_distro": "jazzy",
+      "ros_variants": [
+        "ros-core",
+        "ros-base"
+      ],
+      "ros_apt_source_package": "ros2-apt-source",
+      "ros_apt_source_version": "1.2.0",
+      "ros_apt_source_sha256": "0804d9b13db770eb87019be414cd78378835228ad5fa801fc88758596dd8f7e5",
+      "platforms": {
+        "linux/amd64": {
+          "base_image": "nvcr.io/nvidia/cuda:13.2.1-runtime-ubuntu24.04",
+          "cuda_version": "13.2.1"
+        },
+        "linux/arm64": {
+          "base_image": "nvcr.io/nvidia/cuda:13.2.1-runtime-ubuntu24.04",
+          "cuda_version": "13.2.1"
+        }
+      }
+    },
+    {
+      "cuda_type": "runtime",
+      "ubuntu_version": "24.04",
+      "ubuntu_codename": "noble",
+      "ros_distro": "kilted",
+      "ros_variants": [
+        "ros-core",
+        "ros-base"
+      ],
+      "ros_apt_source_package": "ros2-apt-source",
+      "ros_apt_source_version": "1.2.0",
+      "ros_apt_source_sha256": "0804d9b13db770eb87019be414cd78378835228ad5fa801fc88758596dd8f7e5",
+      "platforms": {
+        "linux/amd64": {
+          "base_image": "nvcr.io/nvidia/cuda:13.2.1-runtime-ubuntu24.04",
+          "cuda_version": "13.2.1"
+        },
+        "linux/arm64": {
+          "base_image": "nvcr.io/nvidia/cuda:13.2.1-runtime-ubuntu24.04",
+          "cuda_version": "13.2.1"
+        }
+      }
+    },
+    {
+      "cuda_type": "runtime",
+      "ubuntu_version": "26.04",
+      "ubuntu_codename": "resolute",
+      "ros_distro": "lyrical",
+      "ros_variants": [
+        "ros-core",
+        "ros-base"
+      ],
+      "ros_apt_source_package": "ros2-apt-source",
+      "ros_apt_source_version": "1.2.0",
+      "ros_apt_source_sha256": "a275b9b819874e745a928e83e39c429fa4d607159285c4ef3ebcf75afa732ee3",
+      "platforms": {
+        "linux/amd64": {
+          "base_image": "nvcr.io/nvidia/cuda:13.3.1-runtime-ubuntu26.04",
+          "cuda_version": "13.3.1"
+        },
+        "linux/arm64": {
+          "base_image": "nvcr.io/nvidia/cuda:13.3.1-runtime-ubuntu26.04",
+          "cuda_version": "13.3.1"
+        }
+      }
+    },
+    {
+      "cuda_type": "runtime",
+      "ubuntu_version": "26.04",
+      "ubuntu_codename": "resolute",
+      "ros_distro": "rolling",
+      "ros_variants": [
+        "ros-core",
+        "ros-base"
+      ],
+      "ros_apt_source_package": "ros2-testing-apt-source",
+      "ros_apt_source_version": "1.2.0",
+      "ros_apt_source_sha256": "da9261ca7c06244da1528e0ede44018f7bb2e24a8a077eb0202f70706b578546",
+      "platforms": {
+        "linux/amd64": {
+          "base_image": "nvcr.io/nvidia/cuda:13.3.1-runtime-ubuntu26.04",
+          "cuda_version": "13.3.1"
+        },
+        "linux/arm64": {
+          "base_image": "nvcr.io/nvidia/cuda:13.3.1-runtime-ubuntu26.04",
+          "cuda_version": "13.3.1"
+        }
+      }
+    }
+  ]
+}
