@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.matrix import expand
+from scripts.matrix import expand, render_readme_table
 
 
 def valid_document():
@@ -227,6 +227,79 @@ class MatrixTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('"tag":"jazzy-ros-core"', result.stdout)
         self.assertIn('"platform":"linux/arm64"', result.stdout)
+
+    def test_cli_prints_readme_table(self):
+        expected = """<!-- BEGIN GENERATED CONFIGURATIONS -->
+| ROS 2 | Ubuntu | CUDA | `amd64` image | `arm64` image |
+| :---: | --- | --- | :---: | :---: |
+| <a href="https://docs.ros.org/en/jazzy/Releases/Release-Jazzy-Jalisco.html"><img src="https://raw.githubusercontent.com/ros2/ros2_documentation/a74c8f1ddc1dafaf144998dc793ffca0c3d5a5fc/source/Get-Started/Releases/jazzy-small.png" height="48" alt="Jazzy Jalisco artwork"></a><br>Jazzy | 24.04 Noble | 13.2.1 | Available | Available · JetPack 7 |
+<!-- END GENERATED CONFIGURATIONS -->
+"""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            matrix_path = Path(temporary_directory) / "images.json"
+            matrix_path.write_text(json.dumps(valid_document()))
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "scripts/matrix.py",
+                    "--readme-table",
+                    str(matrix_path),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, expected)
+
+    def test_readme_table_preserves_platform_cuda_versions(self):
+        document = valid_document()
+        document["images"][0]["ros_distro"] = "humble"
+        document["images"][0]["platforms"]["linux/amd64"]["cuda_version"] = (
+            "12.6.3"
+        )
+        document["images"][0]["platforms"]["linux/arm64"]["cuda_version"] = (
+            "12.6.11"
+        )
+
+        table = render_readme_table(document)
+
+        self.assertIn(
+            "| 12.6.3 / 12.6.11² | Available | Available · JetPack 6 |", table
+        )
+        self.assertIn(
+            "2. Humble uses CUDA 12.6.3 on `amd64` and the Jetson-specific "
+            "L4T CUDA 12.6.11 runtime on `arm64`.",
+            table,
+        )
+
+    def test_readme_table_marks_arm64_without_jetpack_as_preview(self):
+        document = valid_document()
+        document["images"][0]["ros_distro"] = "lyrical"
+
+        table = render_readme_table(document)
+
+        self.assertIn("| Available | Preview³ |", table)
+        self.assertIn(
+            "3. The `arm64` image is available, but no matching JetPack release "
+            "exists and Jetson is not currently supported.",
+            table,
+        )
+
+    def test_readme_table_marks_rolling_testing_source(self):
+        document = valid_document()
+        document["images"][0]["ros_distro"] = "rolling"
+
+        table = render_readme_table(document)
+
+        self.assertIn("<br>Rolling¹ |", table)
+        self.assertIn(
+            "1. Rolling images use packages from the official ROS testing "
+            "repository.",
+            table,
+        )
 
 
 if __name__ == "__main__":

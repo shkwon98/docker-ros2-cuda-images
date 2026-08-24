@@ -38,8 +38,8 @@ Every multi-platform tag provides the same Ubuntu release and ROS 2 distribution
 ### Prerequisites
 
 - Docker Engine
-- A compatible NVIDIA driver or JetPack installation
-- [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
+- NVIDIA discrete GPU: a compatible NVIDIA driver and [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
+- NVIDIA Jetson: a compatible JetPack installation
 
 Pull an image:
 
@@ -65,17 +65,19 @@ ROS is sourced automatically when the container starts.
 
 ## Supported configurations
 
-| ROS 2 | Ubuntu | CUDA | `amd64` | `arm64` | Image tags |
-| --- | --- | --- | --- | --- | --- |
-| Humble | 22.04 Jammy | 12.6 | Available | JetPack 6 target | `humble-ros-core`, `humble-ros-base` |
-| Jazzy | 24.04 Noble | 13.2.1 | Available | JetPack 7 target | `jazzy-ros-core`, `jazzy-ros-base` |
-| Kilted | 24.04 Noble | 13.2.1 | Available | JetPack 7 target | `kilted-ros-core`, `kilted-ros-base` |
-| Lyrical | 26.04 Resolute | 13.3.1 | Available | Preview¹ | `lyrical-ros-core`, `lyrical-ros-base` |
-| Rolling | 26.04 Resolute | 13.3.1 | Available | Preview¹ | `rolling-ros-core`, `rolling-ros-base` |
+<!-- BEGIN GENERATED CONFIGURATIONS -->
+| ROS 2 | Ubuntu | CUDA | `amd64` image | `arm64` image |
+| :---: | --- | --- | :---: | :---: |
+| <a href="https://docs.ros.org/en/humble/Releases/Release-Humble-Hawksbill.html"><img src="https://raw.githubusercontent.com/ros2/ros2_documentation/a74c8f1ddc1dafaf144998dc793ffca0c3d5a5fc/source/Get-Started/Releases/humble-small.png" height="48" alt="Humble Hawksbill artwork"></a><br>Humble | 22.04 Jammy | 12.6.3 / 12.6.11² | Available | Available · JetPack 6 |
+| <a href="https://docs.ros.org/en/jazzy/Releases/Release-Jazzy-Jalisco.html"><img src="https://raw.githubusercontent.com/ros2/ros2_documentation/a74c8f1ddc1dafaf144998dc793ffca0c3d5a5fc/source/Get-Started/Releases/jazzy-small.png" height="48" alt="Jazzy Jalisco artwork"></a><br>Jazzy | 24.04 Noble | 13.2.1 | Available | Available · JetPack 7 |
+| <a href="https://docs.ros.org/en/kilted/Releases/Release-Kilted-Kaiju.html"><img src="https://raw.githubusercontent.com/ros2/ros2_documentation/a74c8f1ddc1dafaf144998dc793ffca0c3d5a5fc/source/Get-Started/Releases/kilted-small.png" height="48" alt="Kilted Kaiju artwork"></a><br>Kilted | 24.04 Noble | 13.2.1 | Available | Available · JetPack 7 |
+| <a href="https://docs.ros.org/en/rolling/Releases/Release-Lyrical-Luth.html"><img src="https://raw.githubusercontent.com/ros2/ros2_documentation/a74c8f1ddc1dafaf144998dc793ffca0c3d5a5fc/source/Get-Started/Releases/lyrical-small.png" height="48" alt="Lyrical Luth artwork"></a><br>Lyrical | 26.04 Resolute | 13.3.1 | Available | Preview³ |
+| <a href="https://docs.ros.org/en/rolling/Releases/Release-Rolling-Ridley.html"><img src="https://raw.githubusercontent.com/ros2/ros2_documentation/a74c8f1ddc1dafaf144998dc793ffca0c3d5a5fc/source/Get-Started/Releases/rolling-small.png" height="48" alt="Rolling Ridley artwork"></a><br>Rolling¹ | 26.04 Resolute | 13.3.1 | Available | Preview³ |
 
-1. The `arm64` image is available, but no matching JetPack release exists and Jetson is not currently supported.
-
-Humble uses CUDA 12.6.3 on `amd64` and L4T CUDA 12.6.11 on `arm64`; both belong to the CUDA 12.6 compatibility family. Rolling images use packages from the official ROS testing repository.
+1. Rolling images use packages from the official ROS testing repository.
+2. Humble uses CUDA 12.6.3 on `amd64` and the Jetson-specific L4T CUDA 12.6.11 runtime on `arm64`.
+3. The `arm64` image is available, but no matching JetPack release exists and Jetson is not currently supported.
+<!-- END GENERATED CONFIGURATIONS -->
 
 ## Image variants
 
@@ -94,8 +96,6 @@ The `linux/amd64` images use NVIDIA CUDA runtime bases and run with the NVIDIA C
 
 Humble targets JetPack 6 using the Jetson/L4T CUDA runtime. Jazzy and Kilted target the CUDA compute environment provided by JetPack 7.
 
-Lyrical and Rolling `arm64` images are published for future compatibility. They are not currently supported on Jetson because no matching JetPack release is available.
-
 Jetson-specific multimedia and SDK components are outside the scope of these images.
 
 ## Tags and reproducibility
@@ -112,3 +112,5 @@ Both tags point to the same multi-platform image. Tags may be updated when their
 ## License
 
 This repository is licensed under the Apache License 2.0. NVIDIA CUDA container contents and ROS packages remain subject to their respective licenses.
+
+ROS 2 distribution artwork is sourced from the [ROS 2 documentation](https://github.com/ros2/ros2_documentation) under CC BY 4.0.
