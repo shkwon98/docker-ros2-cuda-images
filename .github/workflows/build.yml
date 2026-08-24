@@ -6,9 +6,12 @@ on:
     branches: [main]
   workflow_dispatch:
 
+concurrency:
+  group: images-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
-  packages: write
 
 jobs:
   prepare:
@@ -53,6 +56,9 @@ jobs:
   build:
     needs: prepare
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.prepare.outputs.matrix).builds }}
@@ -103,7 +109,7 @@ jobs:
           digest='${{ steps.build.outputs.digest }}'
           test "${digest#sha256:}" != "$digest"
           mkdir -p /tmp/digests
-          touch "/tmp/digests/${digest#sha256:}"
+          touch "/tmp/digests/${{ matrix.platform_slug }}-${digest#sha256:}"
       - name: Upload digest
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
@@ -115,12 +121,20 @@ jobs:
 
   merge:
     needs: [prepare, build]
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    if: >-
+      !cancelled() &&
+      needs.prepare.result == 'success' &&
+      github.ref == 'refs/heads/main' &&
+      github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.prepare.outputs.matrix).manifests }}
     steps:
+      - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
       - name: Set image metadata
         id: metadata
@@ -138,6 +152,36 @@ jobs:
           pattern: digests-${{ matrix.tag }}-*
           path: /tmp/digests
           merge-multiple: true
+      - name: Verify platform digests
+        env:
+          CUDA_TYPE: ${{ matrix.cuda_type }}
+          IMAGE: ${{ steps.metadata.outputs.image }}
+          PLATFORMS: ${{ toJSON(matrix.platforms) }}
+          ROS_DISTRO: ${{ matrix.ros_distro }}
+          ROS_VARIANT: ${{ matrix.ros_variant }}
+          UBUNTU_CODENAME: ${{ matrix.ubuntu_codename }}
+          UBUNTU_VERSION: ${{ matrix.ubuntu_version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/verify_image.py digests /tmp/digests > /tmp/digests.json
+
+          while IFS=$'\t' read -r platform digest; do
+            platform_config=$(jq -c --arg platform "$platform" '.[$platform]' <<<"$PLATFORMS")
+            inspection="/tmp/${platform//\//-}.json"
+            docker buildx imagetools inspect \
+              --format '{{json .Image}}' \
+              "${IMAGE}@${digest}" > "$inspection"
+            python3 scripts/verify_image.py platform "$inspection" \
+              --platform "$platform" \
+              --base-image "$(jq -r .base_image <<<"$platform_config")" \
+              --cuda-type "$CUDA_TYPE" \
+              --cuda-version "$(jq -r .cuda_version <<<"$platform_config")" \
+              --ubuntu-version "$UBUNTU_VERSION" \
+              --ubuntu-codename "$UBUNTU_CODENAME" \
+              --ros-distro "$ROS_DISTRO" \
+              --ros-variant "$ROS_VARIANT"
+          done < <(jq -r 'to_entries[] | [.key, .value] | @tsv' /tmp/digests.json)
       - name: Create manifest
         env:
           IMAGE: ${{ steps.metadata.outputs.image }}
@@ -146,47 +190,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mapfile -t digests < <(find /tmp/digests -maxdepth 1 -type f -printf '%f\n' | sort)
+          mapfile -t digests < <(jq -r 'to_entries | sort_by(.key)[] | .value' /tmp/digests.json)
           test "${#digests[@]}" -eq 2
           sources=()
           for digest in "${digests[@]}"; do
-            sources+=("${IMAGE}@sha256:${digest}")
+            sources+=("${IMAGE}@${digest}")
           done
           docker buildx imagetools create \
             --tag "${IMAGE}:${TAG}" \
             --tag "${IMAGE}:${OS_TAG}" \
             "${sources[@]}"
-      - name: Verify published manifest
+      - name: Verify published manifest platforms
         env:
-          CUDA_TYPE: ${{ matrix.cuda_type }}
           IMAGE: ${{ steps.metadata.outputs.image }}:${{ matrix.tag }}
-          PLATFORMS: ${{ toJSON(matrix.platforms) }}
-          ROS_DISTRO: ${{ matrix.ros_distro }}
-          ROS_VARIANT: ${{ matrix.ros_variant }}
-          UBUNTU_CODENAME: ${{ matrix.ubuntu_codename }}
-          UBUNTU_VERSION: ${{ matrix.ubuntu_version }}
         run: |
           docker buildx imagetools inspect --format '{{json .Image}}' "$IMAGE" > image.json
-          python3 - <<'PY'
-          import json
-          import os
-
-          image = json.load(open("image.json"))
-          platforms = json.loads(os.environ["PLATFORMS"])
-          assert set(image) == set(platforms), (sorted(image), sorted(platforms))
-
-          for platform, platform_config in platforms.items():
-              config = image[platform]["config"]
-              assert config["Entrypoint"] == ["/opt/nvidia/nvidia_entrypoint.sh"]
-              labels = config["Labels"]
-              expected_labels = {
-                  "org.opencontainers.image.base.name": platform_config["base_image"],
-                  "io.github.shkwon98.cuda.type": os.environ["CUDA_TYPE"],
-                  "io.github.shkwon98.cuda.version": platform_config["cuda_version"],
-                  "io.github.shkwon98.ros.distro": os.environ["ROS_DISTRO"],
-                  "io.github.shkwon98.ros.variant": os.environ["ROS_VARIANT"],
-                  "io.github.shkwon98.ubuntu.codename": os.environ["UBUNTU_CODENAME"],
-                  "io.github.shkwon98.ubuntu.version": os.environ["UBUNTU_VERSION"],
-              }
-              assert all(labels[key] == value for key, value in expected_labels.items())
-          PY
+          python3 scripts/verify_image.py manifest image.json
