@@ -19,7 +19,6 @@ ARG VCS_REF=unknown
 LABEL org.opencontainers.image.base.name="${BASE_IMAGE}" \
       org.opencontainers.image.created="${BUILD_DATE}" \
       org.opencontainers.image.description="ROS 2 on an official NVIDIA CUDA base" \
-      org.opencontainers.image.licenses="Apache-2.0" \
       org.opencontainers.image.revision="${VCS_REF}" \
       org.opencontainers.image.source="https://github.com/shkwon98/docker-ros2-cuda-images" \
       org.opencontainers.image.title="ROS 2 CUDA" \

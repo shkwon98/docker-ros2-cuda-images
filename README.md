@@ -119,6 +119,8 @@ Both tags point to the same multi-platform image. Tags may be updated when their
 
 ## License
 
-This repository is licensed under the Apache License 2.0. NVIDIA CUDA container contents and ROS packages remain subject to their respective licenses.
+The project code and documentation in this repository are licensed under the [Apache License 2.0](LICENSE). Third-party artwork is covered separately below.
 
-ROS 2 distribution artwork is sourced from the [ROS 2 documentation](https://github.com/ros2/ros2_documentation) under CC BY 4.0.
+Container contents retain their respective licenses. Use and redistribution of images based on NVIDIA CUDA or L4T CUDA must comply with the [NVIDIA Deep Learning Container License](https://developer.nvidia.com/ngc/nvidia-deep-learning-container-license), including its requirements for derived containers, and the licenses of the included ROS and Ubuntu packages. Preserve the accompanying license and copyright notices when redistributing images.
+
+ROS 2 distribution artwork is provided by [Open Robotics](https://github.com/openrobotics/artwork) under [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/). The thumbnails are served from the [ROS 2 documentation](https://github.com/ros2/ros2_documentation) and displayed at reduced size. The [ROS trademark policy](https://www.ros.org/blog/media/) also applies.
