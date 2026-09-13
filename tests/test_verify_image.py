@@ -1,124 +1,83 @@
 import copy
-import tempfile
+import hashlib
+import io
+import json
+import subprocess
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from scripts.verify_image import (
-    collect_digests,
-    verify_manifest_platforms,
-    verify_platform_image,
-)
+from scripts.verify_image import check_compatibility, publish
 
 
-EXPECTED_LABELS = {
-    "org.opencontainers.image.base.name": (
-        "nvcr.io/nvidia/cuda:13.2.1-runtime-ubuntu24.04"
-    ),
-    "io.github.shkwon98.cuda.version": "13.2.1",
-    "io.github.shkwon98.ubuntu.version": "24.04",
-    "io.github.shkwon98.ubuntu.codename": "noble",
-    "io.github.shkwon98.ros.distro": "jazzy",
-    "io.github.shkwon98.ros.variant": "ros-core",
-}
-
-
-def platform_image():
-    return {
-        "architecture": "amd64",
-        "os": "linux",
-        "config": {
-            "Entrypoint": ["/opt/nvidia/nvidia_entrypoint.sh"],
-            "Labels": copy.deepcopy(EXPECTED_LABELS),
-        },
-    }
+CONFIGURATION = json.loads((Path(__file__).resolve().parents[1] / "images.json").read_text())
 
 
 class VerifyImageTests(unittest.TestCase):
-    def test_accepts_expected_platform_image(self):
-        verify_platform_image(
-            platform_image(),
-            "linux/amd64",
-            EXPECTED_LABELS,
-        )
+    def test_promotion_uses_the_tested_digest_and_stops_on_failure(self):
+        image = copy.deepcopy(CONFIGURATION["images"][0])
+        tag = f'{image["ros_distro"]}-ros-core'
+        image.update(ros_variant="ros-core", tag=tag, os_tag=f'{tag}-{image["ubuntu_codename"]}')
+        digest = "sha256:" + "a" * 64
+        inspection = {}
+        for platform, config in image["platforms"].items():
+            inspection[platform] = {"config": {
+                "Entrypoint": ["/opt/nvidia/nvidia_entrypoint.sh"],
+                "Labels": {
+                    "org.opencontainers.image.base.name": config["base_image"],
+                    "org.opencontainers.image.revision": "revision",
+                    "io.github.shkwon98.cuda.version": config["cuda_version"],
+                    "io.github.shkwon98.ubuntu.version": image["ubuntu_version"],
+                    "io.github.shkwon98.ubuntu.codename": image["ubuntu_codename"],
+                    "io.github.shkwon98.ros.distro": image["ros_distro"],
+                    "io.github.shkwon98.ros.variant": "ros-core",
+                },
+            }}
 
-    def test_accepts_indexed_single_platform_image(self):
-        image = {"linux/amd64": {"config": platform_image()["config"]}}
+        for failure in (None, "registry", "arm64", "platform", "revision", "entrypoint", "digest"):
+            with self.subTest(failure=failure), \
+                 patch("scripts.verify_image.inspect_image", return_value=copy.deepcopy(inspection)) as inspect, \
+                 patch("scripts.verify_image.subprocess.run") as run:
+                if failure == "registry":
+                    inspect.side_effect = [inspection, subprocess.CalledProcessError(1, "inspect")]
+                elif failure == "arm64":
+                    run.side_effect = [None, subprocess.CalledProcessError(42, "docker run")]
+                elif failure == "platform":
+                    del inspect.return_value["linux/arm64"]
+                elif failure == "revision":
+                    inspect.return_value["linux/arm64"]["config"]["Labels"]["org.opencontainers.image.revision"] = "old"
+                elif failure == "entrypoint":
+                    inspect.return_value["linux/arm64"]["config"]["Entrypoint"] = ["/bin/bash"]
+                candidate = "" if failure == "digest" else digest
+                if failure:
+                    with self.assertRaises((ValueError, subprocess.CalledProcessError)):
+                        publish(image, candidate, "Review", "revision")
+                    self.assertFalse(any("create" in call.args[0] for call in run.call_args_list))
+                else:
+                    publish(image, candidate, "Review", "revision")
+                    commands = [call.args[0] for call in run.call_args_list]
+                    self.assertEqual([c[5] for c in commands[:2]], ["linux/amd64", "linux/arm64"])
+                    self.assertTrue(all(c[6] == f"ghcr.io/review/ros2-cuda@{digest}" for c in commands[:2]))
+                    for command, registry in zip(commands[2:], ("ghcr.io", "docker.io"), strict=True):
+                        self.assertEqual(command, [
+                            "docker", "buildx", "imagetools", "create",
+                            "--tag", f'{registry}/review/ros2-cuda:{image["tag"]}',
+                            "--tag", f'{registry}/review/ros2-cuda:{image["os_tag"]}',
+                            f"{registry}/review/ros2-cuda@{digest}",
+                        ])
 
-        verify_platform_image(image, "linux/amd64", EXPECTED_LABELS)
+    def test_weekly_check_rejects_unavailable_published_images(self):
+        image = copy.deepcopy(CONFIGURATION["images"][0])
+        image["ros_apt_source_sha256"] = hashlib.sha256(b"package").hexdigest()
+        base = {platform: {"config": {"Env": [f'CUDA_VERSION={config["cuda_version"]}']}}
+                for platform, config in image["platforms"].items()}
 
-    def test_rejects_wrong_platform(self):
-        image = platform_image()
-        image["architecture"] = "arm64"
+        def inspect(reference):
+            if reference.startswith("nvcr.io/"):
+                return base
+            raise subprocess.CalledProcessError(1, "inspect", stderr="manifest unknown")
 
-        with self.assertRaisesRegex(ValueError, "linux/arm64"):
-            verify_platform_image(image, "linux/amd64", EXPECTED_LABELS)
-
-    def test_rejects_wrong_entrypoint(self):
-        image = platform_image()
-        image["config"]["Entrypoint"] = ["/bin/bash"]
-
-        with self.assertRaisesRegex(ValueError, "Entrypoint"):
-            verify_platform_image(image, "linux/amd64", EXPECTED_LABELS)
-
-    def test_rejects_each_mismatched_label(self):
-        for label in EXPECTED_LABELS:
-            with self.subTest(label=label):
-                image = platform_image()
-                image["config"]["Labels"][label] = "wrong"
-
-                with self.assertRaisesRegex(ValueError, label):
-                    verify_platform_image(image, "linux/amd64", EXPECTED_LABELS)
-
-    def test_collects_one_unique_digest_per_platform(self):
-        with tempfile.TemporaryDirectory() as temporary_directory:
-            directory = Path(temporary_directory)
-            amd64 = "a" * 64
-            arm64 = "b" * 64
-            (directory / f"linux-amd64-{amd64}").touch()
-            (directory / f"linux-arm64-{arm64}").touch()
-
-            digests = collect_digests(directory)
-
-        self.assertEqual(
-            digests,
-            {
-                "linux/amd64": f"sha256:{amd64}",
-                "linux/arm64": f"sha256:{arm64}",
-            },
-        )
-
-    def test_rejects_duplicate_platform_digest_files(self):
-        with tempfile.TemporaryDirectory() as temporary_directory:
-            directory = Path(temporary_directory)
-            (directory / f"linux-amd64-{'a' * 64}").touch()
-            (directory / f"linux-amd64-{'b' * 64}").touch()
-            (directory / f"linux-arm64-{'c' * 64}").touch()
-
-            with self.assertRaisesRegex(ValueError, "linux/amd64"):
-                collect_digests(directory)
-
-    def test_rejects_same_digest_for_both_platforms(self):
-        with tempfile.TemporaryDirectory() as temporary_directory:
-            directory = Path(temporary_directory)
-            digest = "a" * 64
-            (directory / f"linux-amd64-{digest}").touch()
-            (directory / f"linux-arm64-{digest}").touch()
-
-            with self.assertRaisesRegex(ValueError, "unique"):
-                collect_digests(directory)
-
-    def test_manifest_requires_exactly_two_platforms(self):
-        image = {
-            "linux/amd64": {"config": {}},
-            "linux/arm64": {"config": {}},
-        }
-
-        verify_manifest_platforms(image)
-
-        del image["linux/arm64"]
-        with self.assertRaisesRegex(ValueError, "linux/arm64"):
-            verify_manifest_platforms(image)
-
-
-if __name__ == "__main__":
-    unittest.main()
+        with patch("scripts.verify_image.inspect_image", side_effect=inspect), \
+             patch("scripts.verify_image.urllib.request.urlopen", return_value=io.BytesIO(b"package")):
+            with self.assertRaises(subprocess.CalledProcessError):
+                check_compatibility({"images": [image]}, "review")

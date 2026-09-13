@@ -1,139 +1,156 @@
 import argparse
+import hashlib
 import json
 import re
+import subprocess
+import urllib.request
 from pathlib import Path
 
+from scripts.matrix import REQUIRED_PLATFORMS, expand
 
-EXPECTED_PLATFORMS = {"linux/amd64", "linux/arm64"}
-DIGEST_FILE = re.compile(r"^(linux-(?:amd64|arm64))-([0-9a-f]{64})$")
+
+EXPECTED_PLATFORMS = set(REQUIRED_PLATFORMS)
 ENTRYPOINT = ["/opt/nvidia/nvidia_entrypoint.sh"]
+SMOKE_TEST = """import subprocess
+import rclpy
+subprocess.run(["ros2", "--help"], check=True, stdout=subprocess.DEVNULL)
+rclpy.init()
+node = rclpy.create_node("container_smoke_test")
+node.destroy_node()
+rclpy.shutdown()
+"""
 
 
-def collect_digests(directory: Path) -> dict[str, str]:
-    digests = {}
-    for path in sorted(directory.iterdir()):
-        match = DIGEST_FILE.fullmatch(path.name)
-        if not path.is_file() or match is None:
-            raise ValueError(f"invalid digest file: {path.name}")
-
-        platform = match.group(1).replace("-", "/", 1)
-        if platform in digests:
-            raise ValueError(f"duplicate digest for {platform}")
-        digests[platform] = f"sha256:{match.group(2)}"
-
-    if set(digests) != EXPECTED_PLATFORMS:
-        raise ValueError(
-            f"digest platforms {sorted(digests)} != {sorted(EXPECTED_PLATFORMS)}"
-        )
-    if len(set(digests.values())) != len(digests):
-        raise ValueError("platform digests must be unique")
-    return digests
+def inspect_image(reference: str) -> dict:
+    print(f"Checking {reference}", flush=True)
+    return json.loads(subprocess.check_output(
+        ["docker", "buildx", "imagetools", "inspect", "--format", "{{json .Image}}", reference],
+        text=True,
+    ))
 
 
 def config_for_platform(image: object, expected_platform: str) -> dict:
     if not isinstance(image, dict):
         raise ValueError("image inspection must be an object")
-
     if "architecture" in image:
-        actual_platform = f'{image.get("os")}/{image.get("architecture")}'
-        if actual_platform != expected_platform:
-            raise ValueError(
-                f"image platform {actual_platform} != {expected_platform}"
-            )
+        actual = f'{image.get("os")}/{image.get("architecture")}'
+        if actual != expected_platform:
+            raise ValueError(f"image platform {actual} != {expected_platform}")
         config = image.get("config")
     else:
-        if set(image) != {expected_platform}:
-            raise ValueError(
-                f"image platforms {sorted(image)} != [{expected_platform}]"
-            )
+        if expected_platform not in image:
+            raise ValueError(f"missing platform {expected_platform}")
         config = image[expected_platform].get("config")
-
     if not isinstance(config, dict):
         raise ValueError("image config is missing")
     return config
 
 
-def verify_platform_image(
-    image: object,
-    expected_platform: str,
-    expected_labels: dict[str, str],
-) -> None:
-    config = config_for_platform(image, expected_platform)
+def verify_platform_image(image: object, platform: str, labels: dict[str, str]) -> None:
+    config = config_for_platform(image, platform)
     if config.get("Entrypoint") != ENTRYPOINT:
         raise ValueError(f'Entrypoint {config.get("Entrypoint")} != {ENTRYPOINT}')
-
-    labels = config.get("Labels")
-    if not isinstance(labels, dict):
-        raise ValueError("image labels are missing")
-    for key, expected in expected_labels.items():
-        actual = labels.get(key)
-        if actual != expected:
-            raise ValueError(f"{key} {actual!r} != {expected!r}")
+    actual_labels = config.get("Labels") or {}
+    for key, expected in labels.items():
+        if actual_labels.get(key) != expected:
+            raise ValueError(f"{key} {actual_labels.get(key)!r} != {expected!r}")
 
 
 def verify_manifest_platforms(image: object) -> None:
     if not isinstance(image, dict):
         raise ValueError("manifest inspection must be an object")
     if "architecture" in image:
-        platform = f'{image.get("os")}/{image.get("architecture")}'
-        platforms = {platform}
+        platforms = {f'{image.get("os")}/{image["architecture"]}'}
     else:
         platforms = set(image)
     if platforms != EXPECTED_PLATFORMS:
-        raise ValueError(
-            f"manifest platforms {sorted(platforms)} != {sorted(EXPECTED_PLATFORMS)}"
-        )
+        raise ValueError(f"manifest platforms {sorted(platforms)} != {sorted(EXPECTED_PLATFORMS)}")
 
 
-def expected_labels(arguments: argparse.Namespace) -> dict[str, str]:
-    return {
-        "org.opencontainers.image.base.name": arguments.base_image,
-        "io.github.shkwon98.cuda.version": arguments.cuda_version,
-        "io.github.shkwon98.ubuntu.version": arguments.ubuntu_version,
-        "io.github.shkwon98.ubuntu.codename": arguments.ubuntu_codename,
-        "io.github.shkwon98.ros.distro": arguments.ros_distro,
-        "io.github.shkwon98.ros.variant": arguments.ros_variant,
-    }
+def repositories(owner: str) -> list[str]:
+    return [f"{registry}/{owner.lower()}/ros2-cuda" for registry in ("ghcr.io", "docker.io")]
+
+
+def publish(image: dict, digest: str, owner: str, revision: str) -> None:
+    if not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
+        raise ValueError("builder did not return a valid image digest")
+    repos = repositories(owner)
+    # Inspect both registries before changing either registry's public tags.
+    for repo in repos:
+        inspection = inspect_image(f"{repo}@{digest}")
+        verify_manifest_platforms(inspection)
+        for platform in REQUIRED_PLATFORMS:
+            config = image["platforms"][platform]
+            verify_platform_image(inspection, platform, {
+                "org.opencontainers.image.base.name": config["base_image"],
+                "org.opencontainers.image.revision": revision,
+                "io.github.shkwon98.cuda.version": config["cuda_version"],
+                "io.github.shkwon98.ubuntu.version": image["ubuntu_version"],
+                "io.github.shkwon98.ubuntu.codename": image["ubuntu_codename"],
+                "io.github.shkwon98.ros.distro": image["ros_distro"],
+                "io.github.shkwon98.ros.variant": image["ros_variant"],
+            })
+    for platform in REQUIRED_PLATFORMS:
+        subprocess.run([
+            "docker", "run", "--rm", "--pull=always", "--platform", platform,
+            f"{repos[0]}@{digest}", "python3", "-c", SMOKE_TEST,
+        ], check=True)
+    for repo in repos:
+        subprocess.run([
+            "docker", "buildx", "imagetools", "create",
+            "--tag", f'{repo}:{image["tag"]}',
+            "--tag", f'{repo}:{image["os_tag"]}', f"{repo}@{digest}",
+        ], check=True)
+        verify_manifest_platforms(inspect_image(f'{repo}:{image["tag"]}'))
+
+
+def check_compatibility(document: dict, owner: str) -> None:
+    images = expand(document)["include"]
+    bases = {}
+    packages = set()
+    for image in document["images"]:
+        for platform, config in image["platforms"].items():
+            base = config["base_image"]
+            if base not in bases:
+                bases[base] = inspect_image(base)
+            environment = config_for_platform(bases[base], platform).get("Env", [])
+            if f'CUDA_VERSION={config["cuda_version"]}' not in environment:
+                raise ValueError(f"unexpected CUDA version in {base} ({platform})")
+        packages.add((
+            image["ros_apt_source_package"], image["ros_apt_source_version"],
+            image["ubuntu_codename"], image["ros_apt_source_sha256"],
+        ))
+    for package, version, codename, checksum in sorted(packages):
+        url = ("https://github.com/ros-infrastructure/ros-apt-source/releases/download/"
+               f"{version}/{package}_{version}.{codename}_all.deb")
+        print(f"Checking {url}", flush=True)
+        with urllib.request.urlopen(url, timeout=60) as response:
+            actual = hashlib.sha256(response.read()).hexdigest()
+        if actual != checksum:
+            raise ValueError(f"SHA256 mismatch for {url}: {actual} != {checksum}")
+    for repo in repositories(owner):
+        for image in images:
+            verify_manifest_platforms(inspect_image(f'{repo}:{image["tag"]}'))
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Verify image publication inputs")
-    subparsers = parser.add_subparsers(dest="command", required=True)
-
-    digests_parser = subparsers.add_parser("digests")
-    digests_parser.add_argument("directory", type=Path)
-
-    platform_parser = subparsers.add_parser("platform")
-    platform_parser.add_argument("inspection", type=Path)
-    for name in (
-        "platform",
-        "base-image",
-        "cuda-version",
-        "ubuntu-version",
-        "ubuntu-codename",
-        "ros-distro",
-        "ros-variant",
-    ):
-        platform_parser.add_argument(f"--{name}", required=True)
-
-    manifest_parser = subparsers.add_parser("manifest")
-    manifest_parser.add_argument("inspection", type=Path)
-
+    parser = argparse.ArgumentParser(description="Check ROS images and promote tested builds")
+    commands = parser.add_subparsers(dest="command", required=True)
+    promotion = commands.add_parser("publish")
+    promotion.add_argument("--config", type=json.loads, required=True)
+    promotion.add_argument("--digest", required=True)
+    promotion.add_argument("--owner", required=True)
+    promotion.add_argument("--revision", required=True)
+    compatibility = commands.add_parser("compatibility")
+    compatibility.add_argument("configuration", type=Path)
+    compatibility.add_argument("--owner", required=True)
     arguments = parser.parse_args()
     try:
-        if arguments.command == "digests":
-            print(json.dumps(collect_digests(arguments.directory), sort_keys=True))
-        elif arguments.command == "platform":
-            image = json.loads(arguments.inspection.read_text())
-            verify_platform_image(
-                image,
-                arguments.platform,
-                expected_labels(arguments),
-            )
+        if arguments.command == "publish":
+            publish(arguments.config, arguments.digest, arguments.owner, arguments.revision)
         else:
-            image = json.loads(arguments.inspection.read_text())
-            verify_manifest_platforms(image)
-    except (OSError, json.JSONDecodeError, ValueError) as error:
+            check_compatibility(json.loads(arguments.configuration.read_text()), arguments.owner)
+    except (OSError, ValueError, subprocess.CalledProcessError) as error:
         parser.error(str(error))
     return 0
 

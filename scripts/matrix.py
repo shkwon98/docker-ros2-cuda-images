@@ -69,8 +69,7 @@ def expand(document: object) -> dict[str, list[dict[str, object]]]:
     if not isinstance(images, list) or not images:
         raise ValueError("images must be a non-empty list")
 
-    builds = []
-    manifests = []
+    variants = []
     tags = set()
 
     for index, image in enumerate(images):
@@ -135,31 +134,9 @@ def expand(document: object) -> dict[str, list[dict[str, object]]]:
                     "os_tag": f'{tag}-{image["ubuntu_codename"]}',
                 }
             )
-            manifests.append(manifest)
+            variants.append(manifest)
 
-            shared = {
-                key: value
-                for key, value in image.items()
-                if key != "platforms"
-            }
-            for platform in REQUIRED_PLATFORMS:
-                build = dict(shared)
-                build.update(platforms[platform])
-                build.update(
-                    {
-                        "platform": platform,
-                        "platform_slug": platform.replace("/", "-"),
-                        "ros_variant": variant,
-                        "tag": tag,
-                        "os_tag": f'{tag}-{image["ubuntu_codename"]}',
-                    }
-                )
-                builds.append(build)
-
-    return {
-        "builds": {"include": builds},
-        "manifests": {"include": manifests},
-    }
+    return {"include": variants}
 
 
 def render_readme_table(document: object) -> str:
