@@ -117,6 +117,22 @@ jazzy-ros-base-noble
 
 Both tags point to the same multi-platform image. Tags may be updated when their base image or ROS packages change. Pin the published image digest when exact reproducibility is required.
 
+## Maintaining the images
+
+`images.json` defines the supported combinations. The build workflow calls [Docker GitHub Builder](https://docs.docker.com/build/ci/github-actions/github-builder/) for each ROS distribution and variant. Docker manages the platform builds, cache, and multi-platform manifests; the Dockerfile selects the appropriate base for each architecture.
+
+On `main`, builds are uploaded to both registries with `ci-<run>-<attempt>-<distro>-<variant>` staging tags. The image workflow checks the returned digest in both registries and runs a ROS node on both architectures through the default entrypoint. Only then does it update the public tags to that digest. Failed validation leaves the image's public tags unchanged; other image combinations can still publish. Pull requests build without publishing. These CI checks do not exercise an NVIDIA GPU.
+
+Monthly builds refresh the images. The weekly compatibility workflow checks NVIDIA bases, pinned ROS apt source packages, and published manifests without rebuilding. Publishing requires a `DOCKERHUB_TOKEN` repository secret; GHCR uses the workflow's `GITHUB_TOKEN`.
+
+Run the local checks with Docker available:
+
+```bash
+python3 -m unittest discover -s tests -p 'test_*.py'
+python3 scripts/matrix.py --readme-table images.json
+python3 -m scripts.verify_image compatibility images.json --owner shkwon98
+```
+
 ## License
 
 The project code and documentation in this repository are licensed under the [Apache License 2.0](LICENSE). Third-party artwork is covered separately below.
